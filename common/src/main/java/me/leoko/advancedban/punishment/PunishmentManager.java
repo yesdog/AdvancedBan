@@ -1,8 +1,14 @@
 package me.leoko.advancedban.punishment;
 
-import lombok.RequiredArgsConstructor;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import me.leoko.advancedban.AdvancedBan;
+import me.leoko.advancedban.AdvancedBanLogger;
 import me.leoko.advancedban.AdvancedBanPlayer;
+import me.leoko.advancedban.manager.DatabaseManager;
+import me.leoko.advancedban.manager.MessageManager;
+import me.leoko.advancedban.manager.TimeManager;
 import me.leoko.advancedban.utils.SQLQuery;
 
 import javax.annotation.Nonnull;
@@ -13,20 +19,22 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 
-/**
- * Created by Leoko @ dev.skamps.eu on 30.05.2016.
- */
-@RequiredArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class PunishmentManager {
+
+    @Getter
+    private static final PunishmentManager instance = new PunishmentManager();
+
+    private final AdvancedBanLogger logger = AdvancedBanLogger.getInstance();
     private final Set<Punishment> punishments = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Set<Punishment> history = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Set<Object> cached = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private final AdvancedBan advancedBan;
 
     public void onEnable() {
-        advancedBan.getDatabaseManager().executeStatement(SQLQuery.DELETE_OLD_PUNISHMENTS, advancedBan.getTimeManager().getTime());
+        DatabaseManager.getInstance().executeStatement(SQLQuery.DELETE_OLD_PUNISHMENTS, TimeManager.getTime());
 
-        advancedBan.getOnlinePlayers().forEach(player -> load(player.getUniqueId(), player.getName(), player.getAddress().getAddress()));
+        AdvancedBan.get().getOnlinePlayers()
+                .forEach(player -> load(player.getUniqueId(), player.getName(), player.getAddress().getAddress()));
     }
 
     private static String[] getDurationParameter(String... parameter) {
@@ -52,20 +60,20 @@ public class PunishmentManager {
         Set<Punishment> punishments = new HashSet<>();
         Set<Punishment> history = new HashSet<>();
         try {
-            ResultSet rs = advancedBan.getDatabaseManager().executeResultStatement(SQLQuery.SELECT_USER_PUNISHMENTS_WITH_IP, uuid, address.getHostAddress());
+            ResultSet rs = DatabaseManager.getInstance().executeResultStatement(SQLQuery.SELECT_USER_PUNISHMENTS_WITH_IP, uuid, address.getHostAddress());
             while (rs.next()) {
                 punishments.add(getPunishmentFromResultSet(rs));
             }
             rs.close();
 
-            rs = advancedBan.getDatabaseManager().executeResultStatement(SQLQuery.SELECT_USER_PUNISHMENTS_HISTORY_WITH_IP, uuid, address.getHostAddress());
+            rs = DatabaseManager.getInstance().executeResultStatement(SQLQuery.SELECT_USER_PUNISHMENTS_HISTORY_WITH_IP, uuid, address.getHostAddress());
             while (rs.next()) {
                 history.add(getPunishmentFromResultSet(rs));
             }
             rs.close();
         } catch (SQLException ex) {
-            advancedBan.getLogger().warn("An error has ocurred loading the punishments from the database.");
-            advancedBan.getLogger().logException(ex);
+            logger.warn("An error has ocurred loading the punishments from the database.");
+            logger.logException(ex);
         }
         return new InterimData(uuid, name, address, punishments, history);
     }
@@ -73,7 +81,7 @@ public class PunishmentManager {
     public Optional<Punishment> getInterimBan(@Nonnull InterimData data) {
         Objects.requireNonNull(data, "data");
         for (Punishment pt : data.getPunishments()) {
-            if (pt.getType().getBasic() == PunishmentType.BAN && !isExpired(pt)) {
+            if (pt.getType().getBasic() == PunishmentType.BAN && !pt.isExpired()) {
                 return Optional.of(pt);
             }
         }
@@ -104,7 +112,7 @@ public class PunishmentManager {
     public List<Punishment> getPunishments(SQLQuery sqlQuery, Object... parameters) {
         List<Punishment> ptList = new ArrayList<>();
 
-        ResultSet rs = advancedBan.getDatabaseManager().executeResultStatement(sqlQuery, parameters);
+        ResultSet rs = DatabaseManager.getInstance().executeResultStatement(sqlQuery, parameters);
         try {
             while (rs.next()) {
                 Punishment punishment = getPunishmentFromResultSet(rs);
@@ -112,9 +120,9 @@ public class PunishmentManager {
             }
             rs.close();
         } catch (SQLException ex) {
-            advancedBan.getLogger().info("An error has occurred executing a query in the database.");
-            advancedBan.getLogger().debug("Query: \n" + sqlQuery);
-            advancedBan.getLogger().logException(ex);
+            logger.info("An error has occurred executing a query in the database.");
+            logger.debug("Query: \n" + sqlQuery);
+            logger.logException(ex);
         }
         return ptList;
     }
@@ -126,7 +134,7 @@ public class PunishmentManager {
             for (Iterator<Punishment> iterator = (current ? this.punishments : history).iterator(); iterator.hasNext(); ) {
                 Punishment punishment = iterator.next();
                 if ((type == null || type == punishment.getType().getBasic()) && punishment.getIdentifier().equals(identifier)) {
-                    if (!current || !isExpired(punishment)) {
+                    if (!current || !punishment.isExpired()) {
                         punishments.add(punishment);
                     } else {
                         deletePunishment(punishment, false);
@@ -135,18 +143,18 @@ public class PunishmentManager {
                 }
             }
         } else {
-            try (ResultSet rs = advancedBan.getDatabaseManager().
+            try (ResultSet rs = DatabaseManager.getInstance().
                     executeResultStatement(current ? SQLQuery.SELECT_USER_PUNISHMENTS : SQLQuery.SELECT_USER_PUNISHMENTS_HISTORY,
                             identifier.toString())) {
                 while (rs.next()) {
                     Punishment punishment = getPunishmentFromResultSet(rs);
-                    if ((type == null || type == punishment.getType().getBasic()) && (!current || !isExpired(punishment))) {
+                    if ((type == null || type == punishment.getType().getBasic()) && (!current || !punishment.isExpired())) {
                         punishments.add(punishment);
                     }
                 }
             } catch (SQLException ex) {
-                advancedBan.getLogger().info("An error has occurred getting the punishments for " + identifier);
-                advancedBan.getLogger().logException(ex);
+                logger.info("An error has occurred getting the punishments for " + identifier);
+                logger.logException(ex);
             }
         }
         return punishments;
@@ -162,7 +170,7 @@ public class PunishmentManager {
     }
 
     public Optional<Punishment> getPunishment(int id) {
-        ResultSet rs = advancedBan.getDatabaseManager().executeResultStatement(SQLQuery.SELECT_PUNISHMENT_BY_ID, id);
+        ResultSet rs = DatabaseManager.getInstance().executeResultStatement(SQLQuery.SELECT_PUNISHMENT_BY_ID, id);
         Punishment pt = null;
         try {
             if (rs.next()) {
@@ -170,11 +178,11 @@ public class PunishmentManager {
             }
             rs.close();
         } catch (SQLException ex) {
-            advancedBan.getLogger().info("An error has ocurred getting a punishment by his id.");
-            advancedBan.getLogger().debug("Punishment id: '" + id + "'");
-            advancedBan.getLogger().logException(ex);
+            logger.info("An error has ocurred getting a punishment by his id.");
+            logger.debug("Punishment id: '" + id + "'");
+            logger.logException(ex);
         }
-        return pt == null || isExpired(pt) ? Optional.empty() : Optional.of(pt);
+        return pt == null || pt.isExpired() ? Optional.empty() : Optional.of(pt);
     }
 
     public Optional<Punishment> getMute(Object object) {
@@ -203,7 +211,7 @@ public class PunishmentManager {
         if (isCached(identifier)) {
             return (int) history.stream().filter(pt -> pt.getIdentifier().equals(identifier) && layout.equalsIgnoreCase(pt.getCalculation())).count();
         } else {
-            ResultSet resultSet = advancedBan.getDatabaseManager().executeResultStatement(SQLQuery.SELECT_USER_PUNISHMENTS_HISTORY_BY_CALCULATION, identifier.toString(), layout);
+            ResultSet resultSet = DatabaseManager.getInstance().executeResultStatement(SQLQuery.SELECT_USER_PUNISHMENTS_HISTORY_BY_CALCULATION, identifier.toString(), layout);
             int i = 0;
             try {
                 while (resultSet.next()) {
@@ -211,8 +219,8 @@ public class PunishmentManager {
                 }
                 resultSet.close();
             } catch (SQLException ex) {
-                advancedBan.getLogger().warn("An error has occurred getting the level for the layout '" + layout + "' for '" + identifier + "'");
-                advancedBan.getLogger().logException(ex);
+                logger.warn("An error has occurred getting the level for the layout '" + layout + "' for '" + identifier + "'");
+                logger.logException(ex);
             }
             return i;
         }
@@ -230,7 +238,7 @@ public class PunishmentManager {
         if (checkExpired) {
             List<Punishment> toDelete = new ArrayList<>();
             for (Punishment pu : punishments) {
-                if (isExpired(pu)) {
+                if (pu.isExpired()) {
                     toDelete.add(pu);
                 }
             }
@@ -262,13 +270,13 @@ public class PunishmentManager {
     }
 
     public long getCalculation(String layout, String name, String uuid) {
-        long end = advancedBan.getTimeManager().getTime();
+        long end = TimeManager.getTime();
 
         int i = getCalculationLevel(name, uuid);
 
-        List<String> timeLayout = advancedBan.getMessageManager().getLayout("Time." + layout);
+        List<String> timeLayout = MessageManager.getLayout("Time." + layout);
         String time = timeLayout.get(timeLayout.size() <= i ? timeLayout.size() - 1 : i);
-        long toAdd = advancedBan.getTimeManager().toMilliSec(time.toLowerCase());
+        long toAdd = TimeManager.toMilliSec(time.toLowerCase());
         end += toAdd;
 
         return end;
@@ -278,7 +286,7 @@ public class PunishmentManager {
         Objects.requireNonNull(punishment, "punishment");
         if (!punishment.getId().isPresent()) throw new IllegalArgumentException("Punishment is not registered");
 
-        advancedBan.getDatabaseManager().executeStatement(SQLQuery.UPDATE_PUNISHMENT_REASON,
+        DatabaseManager.getInstance().executeStatement(SQLQuery.UPDATE_PUNISHMENT_REASON,
                 punishment.getReason().orElse(null), punishment.getId().getAsInt());
     }
 
@@ -292,7 +300,7 @@ public class PunishmentManager {
             throw new IllegalArgumentException("Punishment has already been added");
         }
 
-        advancedBan.getDatabaseManager().executeStatement(
+        DatabaseManager.getInstance().executeStatement(
                 SQLQuery.INSERT_PUNISHMENT_HISTORY,
                 punishment.getName(),
                 punishment.getIdentifier().toString(),
@@ -307,7 +315,7 @@ public class PunishmentManager {
         if (punishment.getType() != PunishmentType.KICK) {
             ResultSet rs;
             try {
-                advancedBan.getDatabaseManager().executeStatement(
+                DatabaseManager.getInstance().executeStatement(
                         SQLQuery.INSERT_PUNISHMENT,
                         punishment.getName(),
                         punishment.getIdentifier().toString(),
@@ -318,26 +326,25 @@ public class PunishmentManager {
                         punishment.getEnd(),
                         punishment.getCalculation()
                 );
-                rs = advancedBan.getDatabaseManager().executeResultStatement(SQLQuery.SELECT_EXACT_PUNISHMENT,
+                rs = DatabaseManager.getInstance().executeResultStatement(SQLQuery.SELECT_EXACT_PUNISHMENT,
                         punishment.getIdentifier().toString(), punishment.getStart());
                 if (rs.next()) {
                     punishment.setId(rs.getInt("id"));
                 } else {
-                    advancedBan.getLogger().warn("Not able to update ID of punishment! Please restart the server to resolve this issue!\n" + toString());
+                    logger.warn("Not able to update ID of punishment! Please restart the server to resolve this issue!\n" + toString());
                 }
                 rs.close();
             } catch (SQLException ex) {
-                advancedBan.getLogger().logException(ex);
+                logger.logException(ex);
             }
         }
 
-        final int cWarnings = punishment.getType().getBasic() == PunishmentType.WARNING ?
-                (advancedBan.getPunishmentManager().getCurrentWarns(punishment.getIdentifier()) + 1) : 0;
+        final int cWarnings = punishment.getType().getBasic() == PunishmentType.WARNING ? (getCurrentWarns(punishment.getIdentifier()) + 1) : 0;
 
         if (punishment.getType().getBasic() == PunishmentType.WARNING) {
             Optional<String> command = Optional.empty();
             for (int i = 1; i <= cWarnings; i++) {
-                String action = advancedBan.getConfiguration().getWarnActions().get(i);
+                String action = AdvancedBan.get().getConfiguration().getWarnActions().get(i);
                 if (action != null) {
                     command = Optional.of(action);
                 }
@@ -345,10 +352,10 @@ public class PunishmentManager {
             command.ifPresent(cmd -> {
                 final String finalCmd = cmd.replaceAll("%PLAYER%", punishment.getName())
                         .replaceAll("%COUNT%", cWarnings + "")
-                        .replaceAll("%REASON%", punishment.getReason().orElse(advancedBan.getConfiguration().getDefaultReason()));
-                advancedBan.runSyncTask(() -> {
-                    advancedBan.executeCommand(finalCmd);
-                    advancedBan.getLogger().info("Executed command: " + finalCmd);
+                        .replaceAll("%REASON%", punishment.getReason().orElse(AdvancedBan.get().getConfiguration().getDefaultReason()));
+                AdvancedBan.get().runSyncTask(() -> {
+                    AdvancedBan.get().executeCommand(finalCmd);
+                    logger.info("Executed command: " + finalCmd);
                 });
             });
         }
@@ -357,22 +364,22 @@ public class PunishmentManager {
             announce(punishment, cWarnings);
         }
 
-        Optional<AdvancedBanPlayer> player = advancedBan.getPlayer(punishment.getIdentifier().toString());
+        Optional<AdvancedBanPlayer> player = AdvancedBan.get().getPlayer(punishment.getIdentifier().toString());
 
         if (player.isPresent()) {
             if (punishment.getType().getBasic() == PunishmentType.BAN || punishment.getType() == PunishmentType.KICK) {
-                advancedBan.runSyncTask(() -> player.get().kick(getLayoutBSN(punishment)));
+                AdvancedBan.get().runSyncTask(() -> player.get().kick(getLayoutBSN(punishment)));
             } else {
                 for (String str : getLayout(punishment)) {
                     player.get().sendMessage(str);
                 }
-                advancedBan.getPunishmentManager().getLoadedPunishments(false).add(punishment);
+                getLoadedPunishments(false).add(punishment);
             }
         }
 
-        advancedBan.getPunishmentManager().getLoadedHistory().add(punishment);
+        getLoadedHistory().add(punishment);
 
-        advancedBan.callPunishmentEvent(punishment);
+        AdvancedBan.get().callPunishmentEvent(punishment);
     }
 
     public void deletePunishment(@Nonnull Punishment punishment) {
@@ -385,64 +392,64 @@ public class PunishmentManager {
             throw new IllegalArgumentException("Punishment has not been added");
         }
 
-        advancedBan.getDatabaseManager().executeStatement(SQLQuery.DELETE_PUNISHMENT, punishment.getId().getAsInt());
+        DatabaseManager.getInstance().executeStatement(SQLQuery.DELETE_PUNISHMENT, punishment.getId().getAsInt());
 
         getLoadedPunishments(false).remove(punishment);
 
-        advancedBan.getLogger().debug("Deleted punishment " + punishment.getId().getAsInt() + " from " +
+        logger.debug("Deleted punishment " + punishment.getId().getAsInt() + " from " +
                 punishment.getName() + " punishment reason: " +
-                punishment.getReason().orElse(advancedBan.getConfiguration().getDefaultReason()));
-        advancedBan.callRevokePunishmentEvent(punishment, massClear);
+                punishment.getReason().orElse(AdvancedBan.get().getConfiguration().getDefaultReason()));
+        AdvancedBan.get().callRevokePunishmentEvent(punishment, massClear);
     }
 
     public String getDuration(@Nonnull Punishment punishment, boolean fromStart) {
         Objects.requireNonNull(punishment, "punishment");
         String duration = "permanent";
         if (punishment.getType().isTemp()) {
-            long diff = (punishment.getEnd() - (fromStart ? punishment.getStart() : advancedBan.getTimeManager().getTime())) / 1000;
+            long diff = (punishment.getEnd() - (fromStart ? punishment.getStart() : TimeManager.getTime())) / 1000;
             if (diff > 60 * 60 * 24) {
-                duration = advancedBan.getMessageManager().getMessage("General.TimeLayoutD", getDurationParameter("D", diff / 60 / 60 / 24 + "", "H", diff / 60 / 60 % 24 + "", "M", diff / 60 % 60 + "", "S", diff % 60 + ""));
+                duration = MessageManager.getMessage("General.TimeLayoutD", getDurationParameter("D", diff / 60 / 60 / 24 + "", "H", diff / 60 / 60 % 24 + "", "M", diff / 60 % 60 + "", "S", diff % 60 + ""));
             } else if (diff > 60 * 60) {
-                duration = advancedBan.getMessageManager().getMessage("General.TimeLayoutH", getDurationParameter("H", diff / 60 / 60 + "", "M", diff / 60 % 60 + "", "S", diff % 60 + ""));
+                duration = MessageManager.getMessage("General.TimeLayoutH", getDurationParameter("H", diff / 60 / 60 + "", "M", diff / 60 % 60 + "", "S", diff % 60 + ""));
             } else if (diff > 60) {
-                duration = advancedBan.getMessageManager().getMessage("General.TimeLayoutM", getDurationParameter("M", diff / 60 + "", "S", diff % 60 + ""));
+                duration = MessageManager.getMessage("General.TimeLayoutM", getDurationParameter("M", diff / 60 + "", "S", diff % 60 + ""));
             } else {
-                duration = advancedBan.getMessageManager().getMessage("General.TimeLayoutS", getDurationParameter("S", diff + ""));
+                duration = MessageManager.getMessage("General.TimeLayoutS", getDurationParameter("S", diff + ""));
             }
         }
         return duration;
     }
 
     private void announce(Punishment punishment, int cWarnings) {
-        List<String> notification = advancedBan.getMessageManager().getMessageList(punishment.getType().getConfSection() + ".Notification",
+        List<String> notification = MessageManager.getMessageList(punishment.getType().getConfSection() + ".Notification",
                 "OPERATOR", punishment.getOperator(),
-                "PREFIX", advancedBan.getConfiguration().isPrefixDisabled() ? "" : advancedBan.getMessageManager().getMessage("General.Prefix"),
+                "PREFIX", AdvancedBan.get().getConfiguration().isPrefixDisabled() ? "" : MessageManager.getMessage("General.Prefix"),
                 "DURATION", getDuration(punishment, true),
-                "REASON", advancedBan.getMessageManager().getReasonOrDefault(punishment.getReason()),
+                "REASON", MessageManager.getReasonOrDefault(punishment.getReason()),
                 "NAME", punishment.getName(),
                 "ID", String.valueOf(punishment.getId().orElse(-1)),
                 "HEXID", Integer.toHexString(punishment.getId().orElse(-1)).toUpperCase(),
-                "DATE", advancedBan.getTimeManager().getDate(punishment.getStart()),
+                "DATE", TimeManager.getDate(punishment.getStart()),
                 "COUNT", cWarnings + "");
 
-        advancedBan.notify("ab." + punishment.getType().getName() + ".notify", notification);
+        AdvancedBan.get().notify("ab." + punishment.getType().getName() + ".notify", notification);
     }
 
     public List<String> getLayout(@Nonnull Punishment punishment) {
         Objects.requireNonNull(punishment, "punishment");
 
         String operator = punishment.getOperator();
-        String prefix = advancedBan.getMessageManager().getPrefix();
+        String prefix = MessageManager.getPrefix();
         String duration = getDuration(punishment, false);
         String hexId = Integer.toHexString(punishment.getId().orElse(-1)).toUpperCase();
         String id = Integer.toString(punishment.getId().orElse(-1));
-        String date = advancedBan.getTimeManager().getDate(punishment.getStart());
+        String date = TimeManager.getDate(punishment.getStart());
         String count = punishment.getType().getBasic() == PunishmentType.WARNING ?
-                (advancedBan.getPunishmentManager().getCurrentWarns(punishment.getIdentifier()) + 1) + "" : "0";
+                (getCurrentWarns(punishment.getIdentifier()) + 1) + "" : "0";
 
         if (punishment.getReason().isPresent() &&
                 (punishment.getReason().get().startsWith("@") || punishment.getReason().get().startsWith("~"))) {
-            return advancedBan.getMessageManager().getLayout(
+            return MessageManager.getLayout(
                     "Message." + punishment.getReason().get().split(" ")[0].substring(1),
                     "OPERATOR", operator,
                     "PREFIX", prefix,
@@ -455,12 +462,12 @@ public class PunishmentManager {
                     "COUNT", count
             );
         } else {
-            return advancedBan.getMessageManager().getMessageList(
+            return MessageManager.getMessageList(
                     punishment.getType().getConfSection() + ".Layout",
                     "OPERATOR", operator,
                     "PREFIX", prefix,
                     "DURATION", duration,
-                    "REASON", advancedBan.getMessageManager().getReasonOrDefault(punishment.getReason()),
+                    "REASON", MessageManager.getReasonOrDefault(punishment.getReason()),
                     "HEXID", hexId,
                     "ID", id,
                     "DATE", date,
@@ -475,10 +482,5 @@ public class PunishmentManager {
             msg.append("\n").append(str);
         }
         return msg.substring(1);
-    }
-
-    public boolean isExpired(@Nonnull Punishment punishment) {
-        Objects.requireNonNull(punishment, "punishment");
-        return punishment.getType().isTemp() && punishment.getEnd() <= advancedBan.getTimeManager().getTime();
     }
 }

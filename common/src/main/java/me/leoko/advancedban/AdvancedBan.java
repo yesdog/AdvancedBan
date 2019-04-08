@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import lombok.AccessLevel;
 import lombok.Getter;
-import me.leoko.advancedban.command.AbstractCommand;
 import me.leoko.advancedban.configuration.Configuration;
 import me.leoko.advancedban.configuration.Layouts;
 import me.leoko.advancedban.configuration.Messages;
@@ -42,14 +41,6 @@ public abstract class AdvancedBan {
     private final Map<Object, InetAddress> addresses = Collections.synchronizedMap(new HashMap<>());
     private final UUIDManager.FetcherMode mode;
     private final boolean mojangAuthed;
-    private final CommandManager commandManager = new CommandManager(this);
-    private final PunishmentManager punishmentManager = new PunishmentManager(this);
-    private final DatabaseManager databaseManager = new DatabaseManager(this);
-    private final UUIDManager uuidManager = new UUIDManager(this);
-    private final MessageManager messageManager = new MessageManager(this);
-    private final TimeManager timeManager = new TimeManager(this);
-    private final UpdateManager updateManager = new UpdateManager(this);
-    private final AdvancedBanLogger logger = new AdvancedBanLogger(this);
     private final Set<String> commands = new HashSet<>();
     private Configuration configuration;
     private Layouts layouts;
@@ -61,9 +52,17 @@ public abstract class AdvancedBan {
         if (instance != null) {
             throw new IllegalStateException("AdvancedBan has already been initialized");
         }
+
         instance = this;
         this.mode = mode;
         this.mojangAuthed = mojangAuthed;
+
+        AdvancedBanLogger.getInstance().onEnable();
+        DatabaseManager.getInstance().onEnable();
+        UpdateManager.migrateFiles();
+        UUIDManager.getInstance().onEnable();
+        PunishmentManager.getInstance().onEnable();
+        CommandManager.getInstance().onEnable();
     }
 
     public static AdvancedBan get() {
@@ -76,16 +75,10 @@ public abstract class AdvancedBan {
         } catch (IOException e) {
             throw new IllegalStateException("Unable to load configuration files", e);
         }
-        logger.onEnable();
-        databaseManager.onEnable();
-        updateManager.onEnable();
-        uuidManager.onEnable();
-        punishmentManager.onEnable();
-        commandManager.onEnable();
     }
 
     public final void onDisable() {
-        databaseManager.onDisable();
+        DatabaseManager.getInstance().onDisable();
     }
 
     public final void loadFiles() throws IOException {
@@ -138,17 +131,17 @@ public abstract class AdvancedBan {
     }
 
     public Optional<String> onPreLogin(String name, UUID uuid, InetAddress address) {
-        InterimData interimData = punishmentManager.load(uuid, name, address);
+        InterimData interimData = PunishmentManager.getInstance().load(uuid, name, address);
 
-        Optional<Punishment> punishment = punishmentManager.getInterimBan(interimData);
+        Optional<Punishment> punishment = PunishmentManager.getInstance().getInterimBan(interimData);
 
         if (!punishment.isPresent()) {
-            punishmentManager.acceptData(interimData);
+            PunishmentManager.getInstance().acceptData(interimData);
             addresses.put(name, address);
             addresses.put(uuid, address);
         }
 
-        return punishment.map(pun -> AdvancedBan.this.getPunishmentManager().getLayoutBSN(pun));
+        return punishment.map(pun -> PunishmentManager.getInstance().getLayoutBSN(pun));
     }
 
     public void onLogin(AdvancedBanPlayer player) {
@@ -171,12 +164,12 @@ public abstract class AdvancedBan {
         players.remove(player.getUniqueId());
         players.remove(player.getName());
         players.remove(player.getAddress());
-        punishmentManager.discard(player);
+        PunishmentManager.getInstance().discard(player);
     }
 
     public boolean onChat(AdvancedBanPlayer player, String message) {
-        Optional<List<String>> layout = punishmentManager.getMute(player.getUniqueId())
-                .map(pun -> AdvancedBan.this.getPunishmentManager().getLayout(pun));
+        Optional<List<String>> layout = PunishmentManager.getInstance().getMute(player.getUniqueId())
+                .map(pun -> PunishmentManager.getInstance().getLayout(pun));
         if (layout.isPresent()) {
             layout.get().forEach(player::sendMessage);
             return true;
@@ -185,19 +178,13 @@ public abstract class AdvancedBan {
     }
 
     public boolean onCommand(AdvancedBanPlayer player, String command) {
-        Optional<List<String>> layout = punishmentManager.getMute(player.getUniqueId())
-                .map(pun -> AdvancedBan.this.getPunishmentManager().getLayout(pun));
+        Optional<List<String>> layout = PunishmentManager.getInstance().getMute(player.getUniqueId())
+                .map(pun -> PunishmentManager.getInstance().getLayout(pun));
         if (layout.isPresent() && isMutedCommand(command)) {
             layout.get().forEach(player::sendMessage);
             return true;
         }
         return false;
-    }
-
-    public boolean isAdvancedBanCommand(String command) {
-        command = command.split(" ")[0];
-
-        return commands.contains(command);
     }
 
     public boolean isMutedCommand(String command) {
@@ -209,11 +196,6 @@ public abstract class AdvancedBan {
             }
         }
         return false;
-    }
-
-    public final void registerCommand(AbstractCommand command) {
-        commands.add(command.getName());
-        onRegisterCommand(command);
     }
 
     public Optional<AdvancedBanPlayer> getPlayer(UUID uuid) {
@@ -256,11 +238,11 @@ public abstract class AdvancedBan {
         return Optional.ofNullable(addresses.get(value));
     }
 
-    protected abstract void onRegisterCommand(AbstractCommand command);
-
     protected abstract void log(Level level, String msg);
 
     public abstract String getVersion();
+
+    public abstract void registerCommand(String commandName);
 
     public abstract void executeCommand(String command);
 
