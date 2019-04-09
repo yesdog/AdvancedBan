@@ -107,7 +107,7 @@ public class BukkitAdvancedBan extends AdvancedBan {
     }
 
     @Override
-    protected void registerCommand(String command) {
+    public void registerCommand(String command) {
         PluginCommand pluginCommand = plugin.getCommand(command);
         pluginCommand.setExecutor(new AdvancedBanCommandExecutor());
     }

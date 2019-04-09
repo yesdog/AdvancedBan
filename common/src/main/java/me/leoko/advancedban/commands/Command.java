@@ -11,8 +11,10 @@ import me.leoko.advancedban.manager.UUIDManager;
 import me.leoko.advancedban.punishment.Punishment;
 import me.leoko.advancedban.punishment.PunishmentManager;
 import me.leoko.advancedban.punishment.PunishmentType;
+import me.leoko.advancedban.utils.GeoLocation;
 import me.leoko.advancedban.utils.SQLQuery;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
@@ -20,7 +22,6 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 import static me.leoko.advancedban.commands.CommandUtils.*;
-import static me.leoko.advancedban.commands.CommandUtils.processName;
 
 public enum Command {
     BAN(
@@ -148,8 +149,7 @@ public enum Command {
 
                     punishment = PunishmentManager.getInstance().getPunishment(id);
                 } else {
-                    PunishmentType type = PunishmentType.valueOf(input.getPrimary());
-                    input.next();
+                    PunishmentType type = PunishmentType.valueOf(input.next());
 
                     Object target;
                     if (!input.getPrimary().matches("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")) {
@@ -205,23 +205,23 @@ public enum Command {
             "\\S+( [1-9][0-9]*)?|\\S+",
             input -> {
                 if (input.getPrimary().matches("\\S+")) {
-                    if (!Universal.get().getMethods().hasPerms(input.getSender(), "ab.warns.other")) {
-                        MessageManager.sendMessage(input.getSender(), "General.NoPerms", true);
+                    if (!input.getSender().hasPermission("ab.warns.other")) {
+                        input.getSender().sendCustomMessage("General.NoPerms", true);
                         return;
                     }
 
                     new ListCommand(
-                            target -> PunishmentManager.get().getPunishments(target, null, false),
+                            target -> PunishmentManager.getInstance().getPunishments(target, null, false),
                             "Warns", false, true).accept(input);
                 } else {
-                    if (!Universal.get().getMethods().hasPerms(input.getSender(), "ab.warns.own")) {
-                        MessageManager.sendMessage(input.getSender(), "General.NoPerms", true);
+                    if (!input.getSender().hasPermission("ab.warns.own")) {
+                        input.getSender().sendCustomMessage("General.NoPerms", true);
                         return;
                     }
 
-                    String name = Universal.get().getMethods().getName(input.getSender());
+                    String name = input.sender.getName();
                     new ListCommand(
-                            target -> PunishmentManager.get().getPunishments(name, null, false),
+                            target -> PunishmentManager.getInstance().getPunishments(name, null, false),
                             "Warns", false, false).accept(input);
                 }
             },
@@ -233,32 +233,37 @@ public enum Command {
             input -> {
                 String name = input.getPrimary();
 
-                String uuid = processName(input);
+                UUID uuid = processName(input);
                 if (uuid == null)
                     return;
 
 
-                String ip = Universal.get().getIps().getOrDefault(name.toLowerCase(), "none cashed");
-                String loc = Universal.get().getMethods().getFromUrlJson("http://ip-api.com/json/" + ip, "country");
-                Punishment mute = PunishmentManager.get().getMute(uuid);
-                Punishment ban = PunishmentManager.get().getBan(uuid);
+                Optional<InetAddress> address = AdvancedBan.get().getAddress(name.toLowerCase());
+                String ip = address.map(InetAddress::getHostAddress).orElse("none cashed");
 
-                Object sender = input.getSender();
-                MessageManager.sendMessage(sender, "Check.Header", true, "NAME", name);
-                MessageManager.sendMessage(sender, "Check.UUID", false, "UUID", uuid);
-                if (Universal.get().hasPerms(sender, "ab.check.ip")) {
-                    MessageManager.sendMessage(sender, "Check.IP", false, "IP", ip);
-                }
-                MessageManager.sendMessage(sender, "Check.Geo", false, "LOCATION", loc == null ? "failed!" : loc);
-                MessageManager.sendMessage(sender, "Check.Mute", false, "DURATION", mute == null ? "§anone" : mute.getType().isTemp() ? "§e" + mute.getDuration(false) : "§cperma");
-                if (mute != null) {
-                    MessageManager.sendMessage(sender, "Check.MuteReason", false, "REASON", mute.getReason());
-                }
-                MessageManager.sendMessage(sender, "Check.Ban", false, "DURATION", ban == null ? "§anone" : ban.getType().isTemp() ? "§e" + ban.getDuration(false) : "§cperma");
-                if (ban != null) {
-                    MessageManager.sendMessage(sender, "Check.BanReason", false, "REASON", ban.getReason());
-                }
-                MessageManager.sendMessage(sender, "Check.Warn", false, "COUNT", PunishmentManager.get().getCurrentWarns(uuid) + "");
+                String loc = address.flatMap(GeoLocation::getLocation).orElse("failed to fetch!");
+                Punishment mute = PunishmentManager.getInstance().getMute(uuid).orElse(null);
+                Punishment ban = PunishmentManager.getInstance().getInterimBan(uuid).orElse(null);
+
+                AdvancedBanCommandSender sender = input.getSender();
+
+                sender.sendCustomMessage("Check.Header", true, "NAME", name);
+                sender.sendCustomMessage("Check.UUID", false, "UUID", uuid);
+                if (sender.hasPermission("ab.check.ip"))
+                    sender.sendCustomMessage("Check.IP", false, "IP", ip);
+
+                sender.sendCustomMessage("Check.Geo", false, "LOCATION", loc);
+                sender.sendCustomMessage("Check.Mute", false, "DURATION", mute == null ? "§anone"
+                        : mute.getType().isTemp() ? "§e" + PunishmentManager.getInstance().getDuration(mute, false) : "§cperma");
+                if (mute != null)
+                    sender.sendCustomMessage("Check.MuteReason", false, "REASON", mute.getReason());
+
+                sender.sendCustomMessage("Check.Ban", false, "DURATION", ban == null ? "§anone"
+                        : ban.getType().isTemp() ? "§e" + PunishmentManager.getInstance().getDuration(ban, false) : "§cperma");
+                if (ban != null)
+                    sender.sendCustomMessage("Check.BanReason", false, "REASON", ban.getReason());
+
+                sender.sendCustomMessage("Check.Warn", false, "COUNT", PunishmentManager.getInstance().getCurrentWarns(uuid));
             },
             "Check.Usage",
             "check"),
@@ -266,16 +271,15 @@ public enum Command {
     SYSTEM_PREFERENCES("ab.systemprefs",
             ".*",
             input -> {
-                MethodInterface mi = Universal.get().getMethods();
                 Calendar calendar = new GregorianCalendar();
-                Object sender = input.getSender();
-                mi.sendMessage(sender, "§c§lAdvancedBan v2 §cSystemPrefs");
-                mi.sendMessage(sender, "§cServer-Time §8» §7" + calendar.get(Calendar.HOUR_OF_DAY) + ":" + calendar.get(Calendar.MINUTE));
-                mi.sendMessage(sender, "§cYour UUID (Intern) §8» §7" + mi.getInternUUID(sender));
+                AdvancedBanCommandSender sender = input.getSender();
+                sender.sendMessage("§c§lAdvancedBan v2 §cSystemPrefs");
+                sender.sendMessage("§cServer-Time §8» §7" + calendar.get(Calendar.HOUR_OF_DAY) + ":" + calendar.get(Calendar.MINUTE));
+                sender.sendMessage("§cYour UUID (Intern) §8» §7" + AdvancedBan.get().getInternalUUID(sender.getName()));
                 if (input.hasNext()) {
                     String target = input.getPrimaryData();
-                    mi.sendMessage(sender, "§c" + target + "'s UUID (Intern) §8» §7" + mi.getInternUUID(target));
-                    mi.sendMessage(sender, "§c" + target + "'s UUID (Fetched) §8» §7" + UUIDManager.get().getUUID(target));
+                    sender.sendMessage("§c" + target + "'s UUID (Intern) §8» §7" + AdvancedBan.get().getInternalUUID(target));
+                    sender.sendMessage("§c" + target + "'s UUID (Fetched) §8» §7" + UUIDManager.getInstance().getUuid(target));
                 }
             },
             null,
@@ -284,80 +288,81 @@ public enum Command {
     ADVANCED_BAN(null,
             ".*",
             input -> {
-                MethodInterface mi = Universal.get().getMethods();
-                Object sender = input.getSender();
+                AdvancedBanCommandSender sender = input.getSender();
                 if (input.hasNext()) {
                     if (input.getPrimaryData().equals("reload")) {
-                        if (Universal.get().hasPerms(sender, "ab.reload")) {
-                            mi.loadFiles();
-                            mi.sendMessage(sender, "§a§lAdvancedBan §8§l» §7Reloaded!");
+                        if (sender.hasPermission("ab.reload")) {
+                            try {
+                                AdvancedBan.get().loadFiles();
+                            } catch (IOException e) {
+                                AdvancedBanLogger.getInstance().logException(e);
+                                sender.sendMessage("§c§lAdvancedBan §8§l» §7Failed to reload files!");
+                            }
+                            sender.sendMessage("§a§lAdvancedBan §8§l» §7Reloaded!");
                         } else {
-                            MessageManager.sendMessage(sender, "General.NoPerms", true);
+                            sender.sendCustomMessage("General.NoPerms", true);
                         }
                         return;
                     } else if (input.getPrimaryData().equals("help")) {
-                        if (Universal.get().hasPerms(sender, "ab.help")) {
-                            mi.sendMessage(sender, "§8");
-                            mi.sendMessage(sender, "§c§lAdvancedBan §7Command-Help");
-                            mi.sendMessage(sender, "§8");
-                            mi.sendMessage(sender, "§c/ban [Name] [Reason/@Layout]");
-                            mi.sendMessage(sender, "§8» §7Ban a user permanently");
-                            mi.sendMessage(sender, "§c/banip [Name/IP] [Reason/@Layout]");
-                            mi.sendMessage(sender, "§8» §7Ban a user by IP");
-                            mi.sendMessage(sender, "§c/tempban [Name] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Reason/@Layout]");
-                            mi.sendMessage(sender, "§8» §7Ban a user temporary");
-                            mi.sendMessage(sender, "§c/mute [Name] [Reason/@Layout]");
-                            mi.sendMessage(sender, "§8» §7Mute a user permanently");
-                            mi.sendMessage(sender, "§c/tempmute [Name] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Reason/@Layout]");
-                            mi.sendMessage(sender, "§8» §7Mute a user temporary");
-                            mi.sendMessage(sender, "§c/warn [Name] [Reason/@Layout]");
-                            mi.sendMessage(sender, "§8» §7Warn a user permanently");
-                            mi.sendMessage(sender, "§c/tempwarn [Name] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Reason/@Layout]");
-                            mi.sendMessage(sender, "§8» §7Warn a user temporary");
-                            mi.sendMessage(sender, "§c/kick [Name] [Reason/@Layout]");
-                            mi.sendMessage(sender, "§8» §7Kick a user");
-                            mi.sendMessage(sender, "§c/unban [Name/IP]");
-                            mi.sendMessage(sender, "§8» §7Unban a user");
-                            mi.sendMessage(sender, "§c/unmute [Name]");
-                            mi.sendMessage(sender, "§8» §7Unmute a user");
-                            mi.sendMessage(sender, "§c/unwarn [ID] or /unwarn clear [Name]");
-                            mi.sendMessage(sender, "§8» §7Deletes a warn");
-                            mi.sendMessage(sender, "§c/change-reason [ID or ban/mute USER] [New reason]");
-                            mi.sendMessage(sender, "§8» §7Changes the reason of a punishment");
-                            mi.sendMessage(sender, "§c/unpunish [ID]");
-                            mi.sendMessage(sender, "§8» §7Deletes a punishment by ID");
-                            mi.sendMessage(sender, "§c/banlist <Page>");
-                            mi.sendMessage(sender, "§8» §7See all punishments");
-                            mi.sendMessage(sender, "§c/history [Name/IP] <Page>");
-                            mi.sendMessage(sender, "§8» §7See a users history");
-                            mi.sendMessage(sender, "§c/warns [Name] <Page>");
-                            mi.sendMessage(sender, "§8» §7See your or a users wa");
-                            mi.sendMessage(sender, "§c/check [Name]");
-                            mi.sendMessage(sender, "§8» §7Get all information about a user");
-                            mi.sendMessage(sender, "§c/AdvancedBan <reload/help>");
-                            mi.sendMessage(sender, "§8» §7Reloads the plugin or shows help page");
-                            mi.sendMessage(sender, "§8");
+                        if (sender.hasPermission("ab.help")) {
+                            sender.sendMessage("§8");
+                            sender.sendMessage("§c§lAdvancedBan §7Command-Help");
+                            sender.sendMessage("§8");
+                            sender.sendMessage("§c/ban [Name] [Reason/@Layout]");
+                            sender.sendMessage("§8» §7Ban a user permanently");
+                            sender.sendMessage("§c/banip [Name/IP] [Reason/@Layout]");
+                            sender.sendMessage("§8» §7Ban a user by IP");
+                            sender.sendMessage("§c/tempban [Name] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Reason/@Layout]");
+                            sender.sendMessage("§8» §7Ban a user temporary");
+                            sender.sendMessage("§c/mute [Name] [Reason/@Layout]");
+                            sender.sendMessage("§8» §7Mute a user permanently");
+                            sender.sendMessage("§c/tempmute [Name] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Reason/@Layout]");
+                            sender.sendMessage("§8» §7Mute a user temporary");
+                            sender.sendMessage("§c/warn [Name] [Reason/@Layout]");
+                            sender.sendMessage("§8» §7Warn a user permanently");
+                            sender.sendMessage("§c/tempwarn [Name] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Reason/@Layout]");
+                            sender.sendMessage("§8» §7Warn a user temporary");
+                            sender.sendMessage("§c/kick [Name] [Reason/@Layout]");
+                            sender.sendMessage("§8» §7Kick a user");
+                            sender.sendMessage("§c/unban [Name/IP]");
+                            sender.sendMessage("§8» §7Unban a user");
+                            sender.sendMessage("§c/unmute [Name]");
+                            sender.sendMessage("§8» §7Unmute a user");
+                            sender.sendMessage("§c/unwarn [ID] or /unwarn clear [Name]");
+                            sender.sendMessage("§8» §7Deletes a warn");
+                            sender.sendMessage("§c/change-reason [ID or ban/mute USER] [New reason]");
+                            sender.sendMessage("§8» §7Changes the reason of a punishment");
+                            sender.sendMessage("§c/unpunish [ID]");
+                            sender.sendMessage("§8» §7Deletes a punishment by ID");
+                            sender.sendMessage("§c/banlist <Page>");
+                            sender.sendMessage("§8» §7See all punishments");
+                            sender.sendMessage("§c/history [Name/IP] <Page>");
+                            sender.sendMessage("§8» §7See a users history");
+                            sender.sendMessage("§c/warns [Name] <Page>");
+                            sender.sendMessage("§8» §7See your or a users wa");
+                            sender.sendMessage("§c/check [Name]");
+                            sender.sendMessage("§8» §7Get all information about a user");
+                            sender.sendMessage("§c/AdvancedBan <reload/help>");
+                            sender.sendMessage("§8» §7Reloads the plugin or shows help page");
+                            sender.sendMessage("§8");
                         } else {
-                            MessageManager.sendMessage(sender, "General.NoPerms", true);
+                            sender.sendCustomMessage("General.NoPerms", true);
                         }
                         return;
                     }
                 }
 
 
-                mi.sendMessage(sender, "§8§l§m-=====§r §c§lAdvancedBan v2 §8§l§m=====-§r ");
-                mi.sendMessage(sender, "  §cDev §8• §7Leoko");
-                mi.sendMessage(sender, "  §cStatus §8• §a§oStable");
-                mi.sendMessage(sender, "  §cVersion §8• §7" + mi.getVersion());
-                mi.sendMessage(sender, "  §cLicense §8• §7Public");
-                mi.sendMessage(sender, "  §cStorage §8• §7" + (DatabaseManager.get().isUseMySQL() ? "MySQL (external)" : "HSQLDB (local)"));
-                mi.sendMessage(sender, "  §cServer §8• §7" + (Universal.get().isBungee() ? "Bungeecord" : "Spigot/Bukkit"));
-                if (Universal.get().isBungee()) {
-                    mi.sendMessage(sender, "  §cRedisBungee §8• §7" + (Universal.get().useRedis() ? "true" : "false"));
-                }
-                mi.sendMessage(sender, "  §cUUID-Mode §8• §7" + UUIDManager.get().getMode());
-                mi.sendMessage(sender, "  §cPrefix §8• §7" + (mi.getBoolean(mi.getConfig(), "Disable Prefix", false) ? "" : MessageManager.getMessage("General.Prefix")));
-                mi.sendMessage(sender, "§8§l§m-=========================-§r ");
+                sender.sendMessage("§8§l§m-=====§r §c§lAdvancedBan v2 §8§l§m=====-§r ");
+                sender.sendMessage("  §cDev §8• §7Leoko");
+                sender.sendMessage("  §cStatus §8• §a§oStable");
+                sender.sendMessage("  §cVersion §8• §7" + AdvancedBan.get().getVersion());
+                sender.sendMessage("  §cLicense §8• §7Public");
+                sender.sendMessage("  §cStorage §8• §7" + (DatabaseManager.getInstance().isUseMySQL() ? "MySQL (external)" : "HSQLDB (local)"));
+                sender.sendMessage("  §cUUID-Mode §8• §7" + UUIDManager.getInstance().getMode());
+
+                sender.sendMessage("  §cPrefix §8• §7" + MessageManager.getPrefix());
+                sender.sendMessage("§8§l§m-=========================-§r ");
             },
             null,
             "advancedban");
@@ -418,12 +423,24 @@ public enum Command {
             return getPrimary().toLowerCase();
         }
 
-        public void removeArgument(int index) {
-            args = (String[]) ArrayUtils.remove(args, index);
+        public String removeArgument(int index) {
+            String[] temp = new String[args.length - 1];
+            byte diff = 0;
+            for (int i = 0; i < args.length; i++) {
+                if (i == index) {
+                    diff = -1;
+                    continue;
+                }
+
+                temp[i + diff] = args[i];
+            }
+            String removed = args[index];
+            args = temp;
+            return removed;
         }
 
-        public void next() {
-            args = (String[]) ArrayUtils.remove(args, 0);
+        public String next() {
+            return removeArgument(0);
         }
 
         public boolean hasNext() {

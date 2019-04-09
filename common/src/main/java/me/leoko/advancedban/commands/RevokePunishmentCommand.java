@@ -1,8 +1,6 @@
 package me.leoko.advancedban.commands;
 
-import me.leoko.advancedban.AdvancedBan;
 import me.leoko.advancedban.AdvancedBanLogger;
-import me.leoko.advancedban.manager.MessageManager;
 import me.leoko.advancedban.punishment.Punishment;
 import me.leoko.advancedban.punishment.PunishmentManager;
 import me.leoko.advancedban.punishment.PunishmentType;
@@ -11,7 +9,8 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.function.Consumer;
 
-import static me.leoko.advancedban.commands.CommandUtils.*;
+import static me.leoko.advancedban.commands.CommandUtils.getPunishment;
+import static me.leoko.advancedban.commands.CommandUtils.processName;
 
 public class RevokePunishmentCommand implements Consumer<Command.CommandInput> {
     private PunishmentType type;

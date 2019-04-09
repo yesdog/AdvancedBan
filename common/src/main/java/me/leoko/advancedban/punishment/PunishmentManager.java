@@ -1,5 +1,6 @@
 package me.leoko.advancedban.punishment;
 
+import com.sun.istack.internal.NotNull;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -380,6 +381,10 @@ public class PunishmentManager {
         getLoadedHistory().add(punishment);
 
         AdvancedBan.get().callPunishmentEvent(punishment);
+    }
+
+    public void deletePunishment(@Nonnull Punishment punishment, @NotNull String operator) {
+        deletePunishment(punishment, false);
     }
 
     public void deletePunishment(@Nonnull Punishment punishment) {

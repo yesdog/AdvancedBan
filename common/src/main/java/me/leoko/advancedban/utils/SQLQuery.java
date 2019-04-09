@@ -56,11 +56,11 @@ public enum SQLQuery {
             "calculation VARCHAR(50))"
     ),
     FIX_TABLE_PUNISHMENT(
-            "ALTER TABLE `Punishments` MODIFY `uuid` VARCHAR(36) NULL DEFAULT NULL",
+            "ALTER TABLE `Punishments` ALTER COLUMN `uuid` VARCHAR(36) NULL DEFAULT NULL",
             "ALTER TABLE Punishments MODIFY uuid VARCHAR(36)"
     ),
     FIX_TABLE_PUNISHMENT_HISTORY(
-            "ALTER TABLE `PunishmentHistory` MODIFY `uuid` VARCHAR(36) NULL DEFAULT NULL",
+            "ALTER TABLE `PunishmentHistory` ALTER COLUMN `uuid` VARCHAR(36) NULL DEFAULT NULL",
             "ALTER TABLE PunishmentHistory MODIFY uuid VARCHAR(36)"
     ),
     INSERT_PUNISHMENT(

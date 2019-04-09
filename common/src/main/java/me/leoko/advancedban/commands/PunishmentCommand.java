@@ -4,14 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import me.leoko.advancedban.AdvancedBan;
 import me.leoko.advancedban.AdvancedBanCommandSender;
 import me.leoko.advancedban.AdvancedBanPlayer;
-import me.leoko.advancedban.manager.MessageManager;
 import me.leoko.advancedban.manager.TimeManager;
 import me.leoko.advancedban.punishment.Punishment;
 import me.leoko.advancedban.punishment.PunishmentManager;
 import me.leoko.advancedban.punishment.PunishmentType;
 
-import java.util.List;
-import java.util.Optional;
 import java.util.function.Consumer;
 
 import static me.leoko.advancedban.commands.CommandUtils.*;
@@ -39,10 +36,20 @@ public class PunishmentCommand implements Consumer<Command.CommandInput> {
         if (target == null)
             return;
 
-        // calculate duration if necessary
+
+
         Long end = -1L;
+        String calculation = null;
+        // calculate duration if necessary
         if (type.isTemp()) {
-            end = processTime(input, target, type);
+            String timeTag = input.next();
+            if(timeTag.matches("#.+")){
+                calculation = timeTag.substring(1);
+                end = processTimeLayout(calculation, input.getSender(), target);
+            }else {
+                end = processTime(timeTag, input.getSender(), type);
+            }
+
             if (end == null)
                 return;
         }
@@ -63,59 +70,55 @@ public class PunishmentCommand implements Consumer<Command.CommandInput> {
         }
 
         String operator = input.getSender().getName();
-        final Punishment punishment = new Punishment(target, name, operator, "", TimeManager.getTime(), end, type);
+        final Punishment punishment = new Punishment(target, name, operator, calculation, TimeManager.getTime(), end, type);
         punishment.setReason(reason);
-        //TODO split time calculation to extract layout already here ._.
-        PunishmentManager.getInstance().addPunishment(, silent);
+
+        PunishmentManager.getInstance().addPunishment(punishment, silent);
 
         input.getSender().sendCustomMessage(PunishmentType.BAN.getConfSection() + ".Done",
                 true, "NAME", name);
     }
 
     // Removes time argument and returns timestamp (null if failed)
-    private static Long processTime(Command.CommandInput input, Object target, PunishmentType type) {
-        String time = input.getPrimary();
-        input.next();
+    private static Long processTime(String time, AdvancedBanCommandSender sender, PunishmentType type) {
 
-        if (time.matches("#.+")) {
-            String layout = time.substring(1);
-
-            final JsonNode timeLayout = AdvancedBan.get().getLayouts().getLayout("Time." + layout);
-            if (timeLayout.isMissingNode() || !timeLayout.isArray()) {
-                input.getSender().sendCustomMessage("General.LayoutNotFound",
-                        true, "NAME", layout);
-                return null;
-            }
-
-            int i = PunishmentManager.getInstance().getCalculationLevel(target, layout);
-
-
-            String timeName = timeLayout.get(Math.min(i, timeLayout.size() - 1)).asText();
-            if (timeName.equalsIgnoreCase("perma"))
-                return -1L;
-            else
-                return TimeManager.getTime() + TimeManager.toMilliSec(time);
-        } else {
-            long toAdd = TimeManager.toMilliSec(time);
-            if (!input.getSender().hasPermission("ab." + type.getName() + ".dur.max")) {
-                long max = -1;
-                for (int i = 10; i >= 1; i--) {
-                    if (input.getSender().hasPermission("ab." + type.getName() + ".dur." + i)) {
-                        final Long found = AdvancedBan.get().getConfiguration().getTempPerms().get(i);
-                        if (found != null) {
-                            max = found;
-                            break;
-                        }
+        long toAdd = TimeManager.toMilliSec(time);
+        if (!sender.hasPermission("ab." + type.getName() + ".dur.max")) {
+            long max = -1;
+            for (int i = 10; i >= 1; i--) {
+                if (sender.hasPermission("ab." + type.getName() + ".dur." + i)) {
+                    final Long found = AdvancedBan.get().getConfiguration().getTempPerms().get(i);
+                    if (found != null) {
+                        max = found;
+                        break;
                     }
                 }
-                if (max != -1 && toAdd > max) {
-                    input.getSender().sendCustomMessage(type.getConfSection() + ".MaxDuration",
-                            true, "MAX", max / 1000);
-                    return null;
-                }
             }
-            return TimeManager.getTime() + toAdd;
+            if (max != -1 && toAdd > max) {
+                sender.sendCustomMessage(type.getConfSection() + ".MaxDuration",
+                        true, "MAX", max / 1000);
+                return null;
+            }
         }
+        return TimeManager.getTime() + toAdd;
+    }
+
+    private static Long processTimeLayout(String layout, AdvancedBanCommandSender sender, Object target){
+        final JsonNode timeLayout = AdvancedBan.get().getLayouts().getLayout("Time." + layout);
+        if (timeLayout.isMissingNode() || !timeLayout.isArray()) {
+            sender.sendCustomMessage("General.LayoutNotFound",
+                    true, "NAME", layout);
+            return null;
+        }
+
+        int i = PunishmentManager.getInstance().getCalculationLevel(target, layout);
+
+
+        String timeName = timeLayout.get(Math.min(i, timeLayout.size() - 1)).asText();
+        if (timeName.equalsIgnoreCase("perma"))
+            return -1L;
+        else
+            return TimeManager.getTime() + TimeManager.toMilliSec(timeName);
     }
 
     // Checks whether target is exempted from punishment

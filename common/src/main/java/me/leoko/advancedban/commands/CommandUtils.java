@@ -24,8 +24,7 @@ public class CommandUtils {
 
     // Removes name argument and returns uuid (null if failed)
     public UUID processName(Command.CommandInput input) {
-        String name = input.getPrimary();
-        input.next();
+        String name = input.next();
         UUID uuid = UUIDManager.getInstance().getUuid(name.toLowerCase()).orElse(null);
 
         if (uuid == null)
@@ -36,8 +35,7 @@ public class CommandUtils {
 
     // Removes name/ip argument and returns ip (null if failed)
     public InetAddress processIP(Command.CommandInput input) {
-        String name = input.getPrimaryData();
-        input.next();
+        String name = input.next().toLowerCase();
         if (name.matches("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")) {
             try {
                 return InetAddress.getByName(name);
