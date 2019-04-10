@@ -27,7 +27,7 @@ public class MessageManager {
             str = replace(message.textValue(), parameters).replace('&', '§');
         } else {
             str = "Failed! See console for details!";
-            AdvancedBanLogger.getInstance().warn("Unregistered message used. Please check Message.yml");
+            AdvancedBanLogger.getInstance().warn("Unregistered message used. Please check Message.yml for "+path);
         }
         return str;
     }
@@ -39,7 +39,7 @@ public class MessageManager {
             messages.forEach(element -> messageList.add(replace(element.textValue(), parameters).replace('&', '§')));
             return messageList;
         }
-        AdvancedBanLogger.getInstance().warn("Unregistered message used. Please check Message.yml");
+        AdvancedBanLogger.getInstance().warn("Unregistered message used. Please check Message.yml for "+path);
         return Collections.emptyList();
     }
 
@@ -50,7 +50,7 @@ public class MessageManager {
             layout.forEach(element -> messages.add(replace(element.textValue(), parameters).replace('&', '§')));
             return messages;
         }
-        AdvancedBanLogger.getInstance().warn("Unregistered layout used. Please check Layouts.yml");
+        AdvancedBanLogger.getInstance().warn("Unregistered layout used. Please check Layouts.yml for "+path);
         return Collections.emptyList();
     }
 
@@ -64,8 +64,11 @@ public class MessageManager {
         sender.sendMessage(builder.toString());
     }
 
-    public String getPrefix() {
-        return AdvancedBan.get().getConfiguration().isPrefixDisabled() ? "" : getMessage("General.Prefix");
+    public Optional<String> getPrefix() {
+        if (AdvancedBan.get().getConfiguration().isPrefixDisabled())
+            return Optional.empty();
+
+        return Optional.of(getMessage("General.Prefix"));
     }
 
     @SuppressWarnings("OptionalUsedAsFieldOrParameterType")

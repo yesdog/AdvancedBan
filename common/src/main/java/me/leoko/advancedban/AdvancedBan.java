@@ -9,7 +9,10 @@ import me.leoko.advancedban.configuration.Configuration;
 import me.leoko.advancedban.configuration.Layouts;
 import me.leoko.advancedban.configuration.Messages;
 import me.leoko.advancedban.configuration.MySQLConfiguration;
-import me.leoko.advancedban.manager.*;
+import me.leoko.advancedban.manager.CommandManager;
+import me.leoko.advancedban.manager.DatabaseManager;
+import me.leoko.advancedban.manager.UUIDManager;
+import me.leoko.advancedban.manager.UpdateManager;
 import me.leoko.advancedban.punishment.InterimData;
 import me.leoko.advancedban.punishment.Punishment;
 import me.leoko.advancedban.punishment.PunishmentManager;
@@ -18,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -56,13 +60,6 @@ public abstract class AdvancedBan {
         instance = this;
         this.mode = mode;
         this.mojangAuthed = mojangAuthed;
-
-        AdvancedBanLogger.getInstance().onEnable();
-        DatabaseManager.getInstance().onEnable();
-        UpdateManager.migrateFiles();
-        UUIDManager.getInstance().onEnable();
-        PunishmentManager.getInstance().onEnable();
-        CommandManager.getInstance().onEnable();
     }
 
     public static AdvancedBan get() {
@@ -75,10 +72,87 @@ public abstract class AdvancedBan {
         } catch (IOException e) {
             throw new IllegalStateException("Unable to load configuration files", e);
         }
+
+        AdvancedBanLogger.getInstance().onEnable();
+        DatabaseManager.getInstance().onEnable();
+        boolean changes = UpdateManager.migrateFiles();
+        UUIDManager.getInstance().onEnable();
+        PunishmentManager.getInstance().onEnable();
+        CommandManager.getInstance().onEnable();
+
+        if(changes){
+            try {
+                loadFiles();
+            } catch (IOException e) {
+                throw new IllegalStateException("Unable to load configuration files", e);
+            }
+        }
+
+
+        String upt = "You have the newest version";
+        String currentVersion = requestCurrentVersion();
+        if (currentVersion == null) {
+            upt = "Failed to check for updates :(";
+        } else if (!getVersion().startsWith(currentVersion)) {
+            upt = "There is a new version available! [" + currentVersion + "]";
+        }
+
+        if (getConfiguration().isDetailedEnableMessage()) {
+            logToConsoleSender("\n \n§8[]=====[§7Enabling AdvancedBan§8]=====[]"
+                    + "\n§8| §cInformation:"
+                    + "\n§8|   §cName: §7AdvancedBan"
+                    + "\n§8|   §cDeveloper: §7Leoko"
+                    + "\n§8|   §cVersion: §7" + getVersion()
+                    + "\n§8|   §cStorage: §7" + (DatabaseManager.getInstance().isUseMySQL() ? "MySQL (external)" : "HSQLDB (local)")
+                    + "\n§8| §cSupport:"
+                    + "\n§8|   §cGithub: §7https://github.com/DevLeoko/AdvancedBan/issues"
+                    + "\n§8|   §cDiscord: §7https://discord.gg/ycDG6rS"
+                    + "\n§8| §cUpdate:"
+                    + "\n§8|   §7" + upt
+                    + "\n§8[]================================[]§r\n ");
+        } else {
+            logToConsoleSender("§cEnabling AdvancedBan on Version §7" + getVersion());
+            logToConsoleSender("§7§o"+upt);
+        }
     }
 
     public final void onDisable() {
         DatabaseManager.getInstance().onDisable();
+
+        if (getConfiguration().isDetailedDisableMessage()) {
+            logToConsoleSender("\n \n§8[]=====[§7Disabling  AdvancedBan§8]=====[]"
+                    + "\n§8| §cInformation:"
+                    + "\n§8|   §cName: §7AdvancedBan"
+                    + "\n§8|   §cDeveloper: §7Leoko"
+                    + "\n§8|   §cVersion: §7" + getVersion()
+                    + "\n§8|   §cStorage: §7" + (DatabaseManager.getInstance().isUseMySQL() ? "MySQL (external)" : "HSQLDB (local)")
+                    + "\n§8| §cSupport:"
+                    + "\n§8|   §cGithub: §7https://github.com/DevLeoko/AdvancedBan/issues"
+                    + "\n§8|   §cDiscord: §7https://discord.gg/ycDG6rS"
+                    + "\n§8[]================================[]§r\n ");
+        } else {
+            logToConsoleSender("§cDisabling AdvancedBan on Version §7" + getVersion());
+        }
+    }
+
+    private static String requestCurrentVersion(){
+        String response = null;
+        try {
+            InputStream versionStream = new URL("https://api.spigotmc.org/legacy/update.php?resource=8695").openStream();
+            Scanner s = new Scanner(versionStream);
+            if (s.hasNext())
+                response = s.next();
+            s.close();
+            versionStream.close();
+
+        } catch (IOException exc) {
+            AdvancedBanLogger.getInstance().logException(exc);
+        }
+        return response;
+    }
+
+    public void logToConsoleSender(String message){
+        AdvancedBanLogger.getInstance().info(message);
     }
 
     public final void loadFiles() throws IOException {
@@ -230,7 +304,7 @@ public abstract class AdvancedBan {
     }
 
     public Collection<AdvancedBanPlayer> getOnlinePlayers() {
-        return Collections.unmodifiableList(new ArrayList<>(players.values()));
+        return Collections.unmodifiableList(new ArrayList<>(new HashSet<>(players.values())));
     }
 
     public Optional<InetAddress> getAddress(Object value) {

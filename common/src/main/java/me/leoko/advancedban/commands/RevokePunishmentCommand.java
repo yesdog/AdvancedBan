@@ -9,9 +9,6 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.function.Consumer;
 
-import static me.leoko.advancedban.commands.CommandUtils.getPunishment;
-import static me.leoko.advancedban.commands.CommandUtils.processName;
-
 public class RevokePunishmentCommand implements Consumer<Command.CommandInput> {
     private PunishmentType type;
 
@@ -32,12 +29,12 @@ public class RevokePunishmentCommand implements Consumer<Command.CommandInput> {
                 return;
             }
         } else {
-            target = processName(input);
+            target = CommandUtils.processName(input);
             if (target == null)
                 return;
         }
 
-        Punishment punishment = getPunishment(target, type).orElse(null);
+        Punishment punishment = CommandUtils.getPunishment(target, type).orElse(null);
         if (punishment == null) {
             input.getSender().sendCustomMessage("Un" + type.getConfSection() + ".NotPunished",
                     true, "NAME", name);
@@ -45,8 +42,7 @@ public class RevokePunishmentCommand implements Consumer<Command.CommandInput> {
         }
 
         final String operator = input.getSender().getName();
-        PunishmentManager.getInstance().deletePunishment(punishment);
-        //TODO add broadcast on delete based on operator
+        PunishmentManager.getInstance().deletePunishment(punishment, operator);
         input.getSender().sendCustomMessage("Un" + type.getConfSection() + ".Done",
                 true, "NAME", name);
     }

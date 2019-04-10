@@ -11,8 +11,6 @@ import me.leoko.advancedban.punishment.PunishmentType;
 
 import java.util.function.Consumer;
 
-import static me.leoko.advancedban.commands.CommandUtils.*;
-
 public class PunishmentCommand implements Consumer<Command.CommandInput> {
     private PunishmentType type;
 
@@ -31,8 +29,8 @@ public class PunishmentCommand implements Consumer<Command.CommandInput> {
 
         // extract target
         Object target = type.isIpOrientated()
-                ? processIP(input)
-                : processName(input);
+                ? CommandUtils.processIP(input)
+                : CommandUtils.processName(input);
         if (target == null)
             return;
 
@@ -56,7 +54,7 @@ public class PunishmentCommand implements Consumer<Command.CommandInput> {
 
 
         // build reason
-        String reason = processReason(input);
+        String reason = CommandUtils.processReason(input);
         if (reason == null)
             return;
         else if (reason.isEmpty())
@@ -75,7 +73,7 @@ public class PunishmentCommand implements Consumer<Command.CommandInput> {
 
         PunishmentManager.getInstance().addPunishment(punishment, silent);
 
-        input.getSender().sendCustomMessage(PunishmentType.BAN.getConfSection() + ".Done",
+        input.getSender().sendCustomMessage(type.getBasic().getConfSection() + ".Done",
                 true, "NAME", name);
     }
 

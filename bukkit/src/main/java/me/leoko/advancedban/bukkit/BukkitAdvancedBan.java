@@ -6,6 +6,7 @@ import me.leoko.advancedban.bukkit.event.PunishmentEvent;
 import me.leoko.advancedban.bukkit.event.RevokePunishmentEvent;
 import me.leoko.advancedban.manager.UUIDManager;
 import me.leoko.advancedban.punishment.Punishment;
+import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Server;
 import org.bukkit.command.CommandSender;
@@ -49,6 +50,11 @@ public class BukkitAdvancedBan extends AdvancedBan {
             }
         }
         return super.getOnlinePlayers();
+    }
+
+    @Override
+    public void logToConsoleSender(String message) {
+        Bukkit.getServer().getConsoleSender().sendMessage(message);
     }
 
     @Override

@@ -1,6 +1,5 @@
 package me.leoko.advancedban.commands;
 
-import me.leoko.advancedban.manager.MessageManager;
 import me.leoko.advancedban.punishment.Punishment;
 import me.leoko.advancedban.punishment.PunishmentManager;
 
@@ -23,16 +22,15 @@ public class RevokePunishmentIDCommand implements Consumer<Command.CommandInput>
 
         Optional<Punishment> punishment = resolver.apply(id);
         if (!punishment.isPresent()) {
-            input.getSender().sendCustomMessage("Un" + path + ".NotPunished",
+            input.getSender().sendCustomMessage(path + ".NotPunished",
                     true, "ID", id + "");
             return;
         }
 
         final String operator = input.getSender().getName();
-        //TODO broadcast
-        PunishmentManager.getInstance().deletePunishment(punishment.get());
+        PunishmentManager.getInstance().deletePunishment(punishment.get(), operator);
 
-        input.getSender().sendCustomMessage("Un" + path + ".Done",
+        input.getSender().sendCustomMessage(path + ".Done",
                 true, "ID", id + "");
     }
 }

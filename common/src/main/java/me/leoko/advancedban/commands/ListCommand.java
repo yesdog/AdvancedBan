@@ -14,8 +14,6 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import static me.leoko.advancedban.commands.CommandUtils.processName;
-
 public class ListCommand implements Consumer<Command.CommandInput> {
     private Function<Object, List<Punishment>> listSupplier;
     private String config;
@@ -31,6 +29,7 @@ public class ListCommand implements Consumer<Command.CommandInput> {
 
     @Override
     public void accept(Command.CommandInput input) {
+        String name = input.getPrimary();
         Object target = null;
         if (hasTarget) {
             if (input.getPrimary().matches("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")) {
@@ -41,7 +40,7 @@ public class ListCommand implements Consumer<Command.CommandInput> {
                     return;
                 }
             } else {
-                target = processName(input);
+                target = CommandUtils.processName(input);
                 if (target == null)
                     return;
             }
@@ -49,7 +48,7 @@ public class ListCommand implements Consumer<Command.CommandInput> {
 
         final List<Punishment> punishments = listSupplier.apply(target);
         if (punishments.isEmpty()) {
-            input.getSender().sendCustomMessage(config + ".NoEntries", true, "NAME", target);
+            input.getSender().sendCustomMessage(config + ".NoEntries", true, "NAME", name);
             return;
         }
 
@@ -65,7 +64,7 @@ public class ListCommand implements Consumer<Command.CommandInput> {
 
         String prefix = MessageManager.getMessage("General.Prefix");
         List<String> header = MessageManager.getMessageList(config + ".Header",
-                "PREFIX", prefix, "NAME", target);
+                "PREFIX", prefix, "NAME", name);
 
         header.forEach(input.getSender()::sendMessage);
 
@@ -79,9 +78,9 @@ public class ListCommand implements Consumer<Command.CommandInput> {
                     "NAME", punishment.getName(),
                     "DURATION", PunishmentManager.getInstance().getDuration(punishment, history),
                     "OPERATOR", punishment.getOperator(),
-                    "REASON", punishment.getReason(),
+                    "REASON", punishment.getReason().orElse("-"),
                     "TYPE", punishment.getType().getConfSection(),
-                    "ID", punishment.getId() + "",
+                    "ID", punishment.getId().orElse(-1) + "",
                     "DATE", format.format(new Date(punishment.getStart())));
 
             entryLayout.forEach(input.getSender()::sendMessage);
@@ -95,7 +94,7 @@ public class ListCommand implements Consumer<Command.CommandInput> {
         if (punishments.size() / 5.0 + 1 > page + 1) {
             input.getSender().sendCustomMessage(config + ".PageFooter", false,
                     "NEXT_PAGE", (page + 1),
-                    "NAME", target);
+                    "NAME", name);
         }
     }
 }

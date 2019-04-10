@@ -1,6 +1,5 @@
 package me.leoko.advancedban.punishment;
 
-import com.sun.istack.internal.NotNull;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -138,7 +137,7 @@ public class PunishmentManager {
                     if (!current || !punishment.isExpired()) {
                         punishments.add(punishment);
                     } else {
-                        deletePunishment(punishment, false);
+                        deletePunishment(punishment, true);
                         iterator.remove();
                     }
                 }
@@ -166,8 +165,8 @@ public class PunishmentManager {
         return punishment.isPresent() && punishment.get().getType().getBasic() == PunishmentType.WARNING ? punishment : Optional.empty();
     }
 
-    public List<Punishment> getWarns(Object object) {
-        return getPunishments(object, PunishmentType.WARNING, true);
+    public List<Punishment> getWarns(Object target) {
+        return getPunishments(target, PunishmentType.WARNING, true);
     }
 
     public Optional<Punishment> getPunishment(int id) {
@@ -244,7 +243,7 @@ public class PunishmentManager {
                 }
             }
             for (Punishment pu : toDelete) {
-                deletePunishment(pu);
+                deletePunishment(pu, true);
             }
         }
         return punishments;
@@ -383,8 +382,16 @@ public class PunishmentManager {
         AdvancedBan.get().callPunishmentEvent(punishment);
     }
 
-    public void deletePunishment(@Nonnull Punishment punishment, @NotNull String operator) {
-        deletePunishment(punishment, false);
+    public void deletePunishment(@Nonnull Punishment punishment, @Nonnull String operator) {
+        String prefix = MessageManager.getPrefix().map(str -> str + " ").orElse("");
+        String message = prefix +MessageManager.getMessage("Un" + punishment.getType().getBasic().getConfSection("Notification"),
+                "OPERATOR", operator, "NAME", punishment.getName());
+
+        AdvancedBan.get().notify("ab.undoNotify." + punishment.getType().getBasic().getName(), Collections.singletonList(message));
+
+        AdvancedBanLogger.getInstance().debug(operator + " is deleting a punishment");
+
+        deletePunishment(punishment);
     }
 
     public void deletePunishment(@Nonnull Punishment punishment) {
@@ -411,7 +418,7 @@ public class PunishmentManager {
         Objects.requireNonNull(punishment, "punishment");
         String duration = "permanent";
         if (punishment.getType().isTemp()) {
-            long diff = (punishment.getEnd() - (fromStart ? punishment.getStart() : TimeManager.getTime())) / 1000;
+            long diff = ceilDiv((punishment.getEnd() - (fromStart ? punishment.getStart() : TimeManager.getTime())) , 1000);
             if (diff > 60 * 60 * 24) {
                 duration = MessageManager.getMessage("General.TimeLayoutD", getDurationParameter("D", diff / 60 / 60 / 24 + "", "H", diff / 60 / 60 % 24 + "", "M", diff / 60 % 60 + "", "S", diff % 60 + ""));
             } else if (diff > 60 * 60) {
@@ -423,6 +430,10 @@ public class PunishmentManager {
             }
         }
         return duration;
+    }
+
+    long ceilDiv(long x, long y) {
+        return -Math.floorDiv(-x, y);
     }
 
     private void announce(Punishment punishment, int cWarnings) {
@@ -437,14 +448,14 @@ public class PunishmentManager {
                 "DATE", TimeManager.getDate(punishment.getStart()),
                 "COUNT", cWarnings + "");
 
-        AdvancedBan.get().notify("ab." + punishment.getType().getName() + ".notify", notification);
+        AdvancedBan.get().notify("ab.notify." + punishment.getType().getName() + "", notification);
     }
 
     public List<String> getLayout(@Nonnull Punishment punishment) {
         Objects.requireNonNull(punishment, "punishment");
 
         String operator = punishment.getOperator();
-        String prefix = MessageManager.getPrefix();
+        String prefix = MessageManager.getPrefix().orElse("");
         String duration = getDuration(punishment, false);
         String hexId = Integer.toHexString(punishment.getId().orElse(-1)).toUpperCase();
         String id = Integer.toString(punishment.getId().orElse(-1));

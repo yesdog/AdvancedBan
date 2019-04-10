@@ -26,6 +26,10 @@ public class CommandManager {
         }
     }
 
+    public boolean isAdvancedBanCommand(String name){
+        return activeCommands.contains(name.toLowerCase());
+    }
+
     public void processCommand(AdvancedBanCommandSender commandSender, String commandName, String[] args) {
         AdvancedBan.get().runAsyncTask(() -> {
             Command command = Command.getByName(commandName);

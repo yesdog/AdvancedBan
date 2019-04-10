@@ -42,7 +42,6 @@ public class ConnectionListener implements Listener {
     @EventHandler
     public void onLogin(final PostLoginEvent event) {
         plugin.getAdvancedBan().runAsyncTask(() ->
-                plugin.getAdvancedBan().onLogin(new BungeeAdvancedBanPlayer(event.getPlayer(), plugin.getAdvancedBan(),
-                        plugin.getProxy())));
+                plugin.getAdvancedBan().onLogin(new BungeeAdvancedBanPlayer(event.getPlayer())));
     }
 }

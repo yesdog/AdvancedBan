@@ -21,8 +21,6 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import static me.leoko.advancedban.commands.CommandUtils.*;
-
 public enum Command {
     BAN(
             PunishmentType.BAN.getPerms(),
@@ -33,7 +31,7 @@ public enum Command {
 
     TEMP_BAN(
             PunishmentType.TEMP_BAN.getPerms(),
-            "\\S+ [1-9][0-9]*([wdhms]|mo)( .*)?",
+            "\\S+ ([1-9][0-9]*([wdhms]|mo)|#\\S+)( .*)?",
             new PunishmentCommand(PunishmentType.TEMP_BAN),
             PunishmentType.TEMP_BAN.getConfSection("Usage"),
             "tempban"),
@@ -45,6 +43,13 @@ public enum Command {
             PunishmentType.IP_BAN.getConfSection("Usage"),
             "ipban", "banip", "ban-ip"),
 
+    TEMP_IP_BAN(
+            PunishmentType.TEMP_IP_BAN.getPerms(),
+            ".+",
+            new PunishmentCommand(PunishmentType.TEMP_IP_BAN),
+            PunishmentType.TEMP_IP_BAN.getConfSection("Usage"),
+            "tempipban", "tipban"),
+
     MUTE(
             PunishmentType.MUTE.getPerms(),
             ".+",
@@ -54,7 +59,7 @@ public enum Command {
 
     TEMP_MUTE(
             PunishmentType.TEMP_MUTE.getPerms(),
-            "\\S+ [1-9][0-9]*([wdhms]|mo)( .*)?",
+            "\\S+ ([1-9][0-9]*([wdhms]|mo)|#\\S+)( .*)?",
             new PunishmentCommand(PunishmentType.TEMP_MUTE),
             PunishmentType.TEMP_MUTE.getConfSection("Usage"),
             "tempmute"),
@@ -68,7 +73,7 @@ public enum Command {
 
     TEMP_WARN(
             PunishmentType.TEMP_WARNING.getPerms(),
-            "\\S+ [1-9][0-9]*([wdhms]|mo)( .*)?",
+            "\\S+ ([1-9][0-9]*([wdhms]|mo)|#\\S+)( .*)?",
             new PunishmentCommand(PunishmentType.TEMP_WARNING),
             PunishmentType.TEMP_WARNING.getConfSection("Usage"),
             "tempwarn"),
@@ -91,13 +96,13 @@ public enum Command {
     UN_BAN("ab." + PunishmentType.BAN.getName() + ".undo",
             "\\S+",
             new RevokePunishmentCommand(PunishmentType.BAN),
-            "Un" + PunishmentType.BAN.getConfSection(".Usage"),
+            "Un" + PunishmentType.BAN.getConfSection("Usage"),
             "unban"),
 
     UN_MUTE("ab." + PunishmentType.MUTE.getName() + ".undo",
             "\\S+",
             new RevokePunishmentCommand(PunishmentType.MUTE),
-            "Un" + PunishmentType.MUTE.getConfSection(".Usage"),
+            "Un" + PunishmentType.MUTE.getConfSection("Usage"),
             "unmute"),
 
     UN_WARN("ab." + PunishmentType.WARNING.getName() + ".undo",
@@ -107,7 +112,7 @@ public enum Command {
                 if (input.getPrimaryData().equals("clear")) {
                     input.next();
                     String name = input.getPrimary();
-                    UUID uuid = processName(input);
+                    UUID uuid = CommandUtils.processName(input);
                     if (uuid == null)
                         return;
 
@@ -120,8 +125,7 @@ public enum Command {
 
                     String operator = input.getSender().getName();
                     for (Punishment punishment : punishments) {
-                        //TODO broadcast
-                        PunishmentManager.getInstance().deletePunishment(punishment);
+                        PunishmentManager.getInstance().deletePunishment(punishment, operator);
                     }
                     input.getSender().sendCustomMessage("Un" + confSection + ".Clear.Done",
                             true, "COUNT", String.valueOf(punishments.size()));
@@ -129,7 +133,7 @@ public enum Command {
                     new RevokePunishmentIDCommand("Un" + confSection, PunishmentManager.getInstance()::getWarn).accept(input);
                 }
             },
-            "Un" + PunishmentType.WARNING.getConfSection(".Usage"),
+            "Un" + PunishmentType.WARNING.getConfSection("Usage"),
             "unwarn"),
 
     UN_PUNISH("ab.all.undo",
@@ -153,7 +157,7 @@ public enum Command {
 
                     Object target;
                     if (!input.getPrimary().matches("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")) {
-                        target = processName(input);
+                        target = CommandUtils.processName(input);
                         if (target == null)
                             return;
                     } else {
@@ -166,10 +170,10 @@ public enum Command {
                         input.next();
                     }
 
-                    punishment = getPunishment(target, type);
+                    punishment = CommandUtils.getPunishment(target, type);
                 }
 
-                String reason = processReason(input);
+                String reason = CommandUtils.processReason(input);
                 if (reason == null)
                     return;
 
@@ -211,7 +215,7 @@ public enum Command {
                     }
 
                     new ListCommand(
-                            target -> PunishmentManager.getInstance().getPunishments(target, null, false),
+                            target -> PunishmentManager.getInstance().getPunishments(target, PunishmentType.WARNING, true),
                             "Warns", false, true).accept(input);
                 } else {
                     if (!input.getSender().hasPermission("ab.warns.own")) {
@@ -221,7 +225,7 @@ public enum Command {
 
                     String name = input.sender.getName();
                     new ListCommand(
-                            target -> PunishmentManager.getInstance().getPunishments(name, null, false),
+                            target -> PunishmentManager.getInstance().getPunishments(name, PunishmentType.WARNING, true),
                             "Warns", false, false).accept(input);
                 }
             },
@@ -233,7 +237,7 @@ public enum Command {
             input -> {
                 String name = input.getPrimary();
 
-                UUID uuid = processName(input);
+                UUID uuid = CommandUtils.processName(input);
                 if (uuid == null)
                     return;
 
@@ -283,7 +287,7 @@ public enum Command {
                 }
             },
             null,
-            "systemPrefs"),
+            "systempreferences"),
 
     ADVANCED_BAN(null,
             ".*",
@@ -361,7 +365,7 @@ public enum Command {
                 sender.sendMessage("  §cStorage §8• §7" + (DatabaseManager.getInstance().isUseMySQL() ? "MySQL (external)" : "HSQLDB (local)"));
                 sender.sendMessage("  §cUUID-Mode §8• §7" + UUIDManager.getInstance().getMode());
 
-                sender.sendMessage("  §cPrefix §8• §7" + MessageManager.getPrefix());
+                sender.sendMessage("  §cPrefix §8• §7" + MessageManager.getPrefix().orElse("§edisabled"));
                 sender.sendMessage("§8§l§m-=========================-§r ");
             },
             null,
