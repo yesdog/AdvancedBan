@@ -15,6 +15,8 @@ import java.util.Optional;
 public class MessageManager {
     private static String replace(String str, Object... parameters) {
         for (int i = 0; i < parameters.length; i += 2) {
+            if(parameters[i + 1] == null)
+                parameters[i + 1] = "";
             str = str.replaceAll("%" + parameters[i].toString() + '%', parameters[i + 1].toString());
         }
         return str;
