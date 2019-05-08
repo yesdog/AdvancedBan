@@ -10,6 +10,7 @@ import me.leoko.advancedban.utils.SQLQuery;
 
 import java.sql.*;
 import java.util.Optional;
+import java.util.UUID;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class DatabaseManager {
@@ -103,6 +104,8 @@ public class DatabaseManager {
                     statement.setInt(i + 1, (Integer) param);
                 } else if (param instanceof String) {
                     statement.setString(i + 1, (String) param);
+                } else if (param instanceof UUID) {
+                    statement.setString(i + 1, param.toString());
                 } else if (param instanceof Long) {
                     statement.setLong(i + 1, (Long) param);
                 } else {
