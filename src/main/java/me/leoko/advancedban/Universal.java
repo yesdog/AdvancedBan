@@ -14,6 +14,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.UUID;
+
 import me.leoko.advancedban.bungee.BungeeMethods;
 import me.leoko.advancedban.manager.DatabaseManager;
 import me.leoko.advancedban.manager.LogManager;
@@ -198,8 +200,17 @@ public class Universal {
     }
 
     public String callConnection(String name, String ip) {
+        return callConnection(name, ip, null);
+    }
+
+    public String callConnection(String name, String ip, UUID loginUUID) {
         name = name.toLowerCase();
-        String uuid = UUIDManager.get().getUUID(name);
+        String uuid;
+        if (loginUUID == null) {
+            uuid = UUIDManager.get().getUUID(name);
+        } else {
+            uuid = loginUUID.toString().replaceAll("-", "");
+        }
         if (uuid == null) {
             return "[AdvancedBan] Failed to fetch your UUID";
         }
